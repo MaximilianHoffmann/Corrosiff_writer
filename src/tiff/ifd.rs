@@ -10,12 +10,11 @@
 //! 
 //! NYPD KKK IFD they're all the same
 
-use core::num;
 use std::fmt::Debug;
 use std::iter::Iterator;
 use binrw::{
     io::{Read, Seek, SeekFrom},
-    BinRead, BinWrite,
+    BinRead,
     meta::ReadEndian
 };
 

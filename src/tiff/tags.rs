@@ -7,7 +7,7 @@
 
 use std::convert::TryFrom;
 use std::fmt::Display;
-use binrw::{BinRead, BinWrite};
+use binrw::BinRead;
 
 /// The ValueType field can either
 /// be of size u32 or u64, depending
