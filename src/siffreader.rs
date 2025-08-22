@@ -1436,10 +1436,13 @@ impl SiffReader{
         let mut registration = registration;
         _check_registration(&mut registration, &frames)?;
 
+
+        let num_slices = roi.dim().0;
+
         // The ROI array has the same shape as the number of True values
         // in the mask.
         let mut array = Array2::<u64>::zeros(
-            (frames.len(), roi.iter().filter(|&&x| x).count())
+            (frames.len() / num_slices, roi.iter().filter(|&&x| x).count())
         );
 
         let mut lookup_table = Array3::<usize>::zeros(roi.dim());
@@ -1484,16 +1487,26 @@ impl SiffReader{
             let roi_cycle = roi_cycle.skip(start % roi.dim().0);
             let lookup_cycle = lookup_cycle.skip(start % roi.dim().0);
 
+            // This has to work differently from the other versions because
+            // each tick of the 0th axis corresponds to a volume, not a frame,
+            // so it has to be repeated num_slices times
             match registration {
                 Some(reg) => {
-                    izip!(local_frames.iter(), chunk.axis_iter_mut(Axis(0)), roi_cycle, lookup_cycle)
+                    izip!(
+                        local_frames.iter(),
+                        // chunk.axis_iter_mut(Axis(0))
+                        (0..chunk.dim().0)
+                            .flat_map(|x| std::iter::repeat(x).take(num_slices)),
+                        roi_cycle,
+                        lookup_cycle
+                    )
                         .try_for_each(
-                            |(&this_frame, mut this_chunk, roi_plane, lookup_plane)|
+                            |(&this_frame, this_chunk_idx, roi_plane, lookup_plane)|
                             -> Result<(), CorrosiffError> {
                             extract_intensity_mask_registered(
                                 &mut local_f,
                                 &self._ifds[this_frame as usize],
-                                &mut this_chunk,
+                                &mut chunk.index_axis_mut(Axis(0), this_chunk_idx),
                                 &roi_plane,
                                 &lookup_plane,
                                 *reg.get(&this_frame).unwrap(),
@@ -1501,14 +1514,22 @@ impl SiffReader{
                         })?;
                 },
                 None => {
-                    izip!(local_frames.iter(), chunk.axis_iter_mut(Axis(0)), roi_cycle, lookup_cycle)
+                    izip!(
+                        local_frames.iter(),
+                        // chunk.axis_iter_mut(Axis(0)),
+                        (0..chunk.dim().0)
+                            .flat_map(|x| std::iter::repeat(x).take(num_slices)),
+                        roi_cycle,
+                        lookup_cycle
+                    )
                         .try_for_each(
-                            |(&this_frame, mut this_chunk, roi_plane, lookup_plane)|
+                            |(&this_frame, this_chunk_idx, roi_plane, lookup_plane)|
                             -> Result<(), CorrosiffError> {
                             extract_intensity_mask(
                                 &mut local_f,
                                 &self._ifds[this_frame as usize],
-                                &mut this_chunk,
+                                // &mut this_chunk,
+                                &mut chunk.index_axis_mut(Axis(0), this_chunk_idx),
                                 &roi_plane,
                                 &lookup_plane,
                             )?; Ok(())

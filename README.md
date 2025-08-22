@@ -34,7 +34,7 @@ It also seems like this is a very natural place for using better
 `struct`s and `trait`s. I think what I want to do is create a trait
 for all the varied return types,
 ```rust
-trait FileReadImage {
+trait FileReadImage <D : Dim> {
     pub fn read_raw(...) -> Result<(), IOError>;
     pub fn read_compressed(...)
     pub fn read_raw_registered(...)
