@@ -30,6 +30,28 @@ mask / masks + flim. This seems like exactly the type of thing the
 `Rust` macro system is perfect for (once I understand it better!). This is
 obviously a very bad boilerplate-y v0.0.1 type implementation.
 
+It also seems like this is a very natural place for using better
+`struct`s and `trait`s. I think what I want to do is create a trait
+for all the varied return types,
+```rust
+trait FileReadImage {
+    pub fn read_raw(...) -> Result<(), IOError>;
+    pub fn read_compressed(...)
+    pub fn read_raw_registered(...)
+    pub fn read_compressed_registered(...)
+}
+
+struct MaskArray{}
+
+impl FileReadImage for MaskArray {
+    ...
+}
+
+```
+for things like `sum_mask`, `sum_masks`, etc.
+The tricky part is that each one needs some subtly different
+args...
+
 - Consider making more useful and interesting `Rust` structs for
 return values, rather than just passing back `ndarray` objects. I
 could wrap these in, for example, the `SiffFrame` struct buried deep

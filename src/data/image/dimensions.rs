@@ -4,7 +4,7 @@
 //! 
 
 use ndarray::prelude::*;
-use crate::tiff::IFD;
+use crate::{tiff::IFD, CorrosiffError};
 
 pub mod macros {
 

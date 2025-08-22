@@ -1,6 +1,6 @@
 use bytemuck::try_cast_slice;
 use ndarray::prelude::*;
-
+use itertools::izip;
 use std::io::{
     Error as IOError,
     ErrorKind as IOErrorKind,
@@ -61,6 +61,32 @@ pub fn load_array_raw_siff_registered<T : Into<u64>> (
                     photon_to_x!(siffphoton, registration.1, xdim),
                 ]
             ]+=1;
+        }
+    );
+
+    Ok(())
+}
+
+#[binrw::parser(reader)]
+pub fn extract_mask_raw_siff_registered<T : Into<u64>>(
+    target_array : &mut ArrayViewMut1<u64>,
+    mask : &ArrayView2<bool>,
+    lookup_table : &ArrayView2<usize>,
+    strip_bytes : T,
+    ydim : u32,
+    xdim : u32,
+    registration : (i32, i32),
+) -> binrw::BinResult<()> {
+    
+    photonwise_op!(
+        reader,
+        strip_bytes,
+        |siffphoton| {
+            let (y, x) = (
+                photon_to_y!(siffphoton, registration.0, ydim),
+                photon_to_x!(siffphoton, registration.1, xdim)
+            );
+            target_array[lookup_table[[y, x]]] += mask[[y, x]] as u64;
         }
     );
 
@@ -134,6 +160,32 @@ pub fn load_array_compressed_siff_registered(
 
     load_array_compressed_siff(reader, endian, (array, ydim, xdim))?;
     roll_inplace(array, registration);
+    Ok(())
+}
+
+#[binrw::parser(reader, endian)]
+pub fn extract_mask_compressed_siff_registered(
+    target_array : &mut ArrayViewMut1<u64>,
+    mask : &ArrayView2<bool>,
+    lookup_table : &ArrayView2<usize>,
+    ydim : u32,
+    xdim : u32,
+    registration : (i32, i32),
+) -> binrw::BinResult<()> {
+    
+    let mut frame_array = Array2::<u16>::from_shape_vec(
+        (ydim as usize, xdim as usize),
+        vec![0; ydim as usize * xdim as usize]
+    ).unwrap();
+    load_array_compressed_siff_registered(reader, endian,
+        (&mut frame_array.view_mut(), ydim, xdim, registration))?;
+    
+    for (&mask_px, &frame_px, &lookup_px) in izip!(
+        mask.iter(), frame_array.iter(), lookup_table.iter()
+    ) {
+       target_array[lookup_px] += mask_px as u64 * frame_px as u64;
+    }
+
     Ok(())
 }
 

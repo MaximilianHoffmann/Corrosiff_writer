@@ -2,6 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use criterion::BenchmarkId;
 use corrosiff;
 
+
 use ndarray::prelude::*;
 
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ const LONG_SIFF_PATH: &str = "/Users/stephen/Desktop/Data/imaging/2024-04/2024-0
 /// (to compare overhead latency) and then many frames with and without registration
 /// (to compare the actual effect of adding registration)
 fn criterion_benchmark_read_frames(c: &mut Criterion) {
+
     let siffreader = corrosiff::open_siff(SHORT_SIFF_PATH).unwrap();
     let mut read_bench = c.benchmark_group("Frame read benchmarks");
     let frame_vec = Vec::<u64>::from_iter(0..40);

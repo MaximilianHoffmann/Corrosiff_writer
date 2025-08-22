@@ -122,7 +122,7 @@ impl SiffFrame {
         writer.write(&((num_tags as u64).to_le_bytes()))?;
 
         let image_size : u64 = ifd.width().unwrap().into() * ifd.height().unwrap().into() * std::mem::size_of::<u16>() as u64;
-        let bytes_per_tag = ifd.size_of_tag() as u64;
+        let _bytes_per_tag = ifd.size_of_tag() as u64;
 
         let end_of_ifd = 
             start_of_write_ifd +

@@ -486,14 +486,18 @@ pub mod getters{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{TEST_FILE_PATH, APPENDED_TEXT_FILE, TIFF_SIFF};
+    use crate::tests::get_test_paths;
     use crate::tiff::FileFormat;
     use std::fs::File;
     use std::io::BufReader;
 
     #[test]
     fn test_metadata() {
-        let f = File::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let appended_text_file = test_paths.get("APPENDED_TEXT_FILE").expect("APPENDED_TEXT_FILE not found");
+        let tiff_siff = test_paths.get("TIFF_SIFF").expect("TIFF_SIFF not found");
+        let f = File::open(test_file_path).unwrap();
         let mut reader = BufReader::new(f);
         let file_format = FileFormat::parse_filetype(&mut reader).unwrap();
         let ifds = file_format.get_ifd_vec(&mut reader);
@@ -501,7 +505,7 @@ mod tests {
         println!("{:?}", metadata);
 
         // Appended text needs a file that actually has text in it!
-        reader = BufReader::new(File::open(APPENDED_TEXT_FILE).unwrap());
+        reader = BufReader::new(File::open(appended_text_file).unwrap());
         let file_format = FileFormat::parse_filetype(&mut reader).unwrap();
 
         let ifds = file_format.get_ifd_vec(&mut reader);
@@ -519,7 +523,7 @@ mod tests {
             get_appended_text(&ifds_ref, &mut reader)
         );
 
-        reader = BufReader::new(File::open(TIFF_SIFF).unwrap());
+        reader = BufReader::new(File::open(tiff_siff).unwrap());
 
         let file_format = FileFormat::parse_filetype(&mut reader).unwrap();
         let ifds = file_format.get_ifd_vec(&mut reader);

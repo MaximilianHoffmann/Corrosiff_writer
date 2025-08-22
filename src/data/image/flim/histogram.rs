@@ -353,7 +353,7 @@ impl<D> ImageHistogram<D> {
 mod tests{
     use super::*;
     use crate::tests::{
-        TEST_FILE_PATH,
+        get_test_paths,
         UNCOMPRESSED_FRAME_NUM,
         COMPRESSED_FRAME_NUM
     };
@@ -362,6 +362,8 @@ mod tests{
 
     #[test]
     fn single_frame_histograms() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let TEST_FILE_PATH = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
 
         let file_format = FileFormat::parse_filetype(&mut f).unwrap();
@@ -391,6 +393,8 @@ mod tests{
 
     #[test]
     fn image_histogram_tests(){
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let TEST_FILE_PATH = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         // TODO implement when I actually start using these.
         let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
         let file_format = FileFormat::parse_filetype(&mut f).unwrap();

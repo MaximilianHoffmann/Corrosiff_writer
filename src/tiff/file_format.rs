@@ -364,21 +364,25 @@ mod tests {
     use super::*;
     use std::fs::File;
     use binrw::io::BufReader;
-    use crate::tests::TEST_FILE_PATH;
+    use crate::tests::get_test_paths;
 
     #[test]
     fn test_parse_filetype() {
-        let f = File::open(TEST_FILE_PATH)
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let f = File::open(test_file_path)
             .expect("Could not open test file");
         let mut buffer = BufReader::new(&f);
         let file_format = FileFormat::parse_filetype(&mut buffer).unwrap();
         println!("{:?}", file_format);
-        assert_eq!(file_format.num_flim_tau_bins(), Some(629));
+        assert_eq!(file_format.num_flim_tau_bins(), Some(631));
     }
 
     #[test]
     fn test_read_ifd() {
-        let f = File::open(TEST_FILE_PATH)
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let f = File::open(test_file_path)
             .expect("Could not open test file");
         let mut buffer = BufReader::new(&f);
         let file_format = FileFormat::parse_filetype(&mut buffer).unwrap();
@@ -389,7 +393,9 @@ mod tests {
 
     #[test]
     fn test_get_ifd_iter() {
-        let f = File::open(TEST_FILE_PATH)
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let f = File::open(test_file_path)
             .expect("Could not open test file");
         let mut buffer = BufReader::new(&f);
         let file_format = FileFormat::parse_filetype(&mut buffer).unwrap();

@@ -1,6 +1,12 @@
 //! The primary `SiffReader` object, which
 //! parses files and extracts interesting
 //! information and/or data.
+//! 
+//! The style here is quite bad -- lots of copy-paste code
+//! because I kept realizing that I would need a new feature
+//! and just sort of tacked it on in the same style. I look
+//! forward to thinking about how to make this more natural,
+//! elegant, and (frankly) readable.
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -20,21 +26,11 @@ use num_complex::Complex;
 // too complex. Or I should hide some of
 // these deeper in the module?
 use crate::{
-    TiffMode,
-    utils::{parallelize_op,FramesError,},
-    CorrosiffError,
-    tiff::{
-        FileFormat,
-        BigTiffIFD,
-        IFD,
-        dimensions_consistent,
-    },
     data::image::{
-        load::*,
-        DimensionsError,
-        Dimensions,
-    },
-    metadata::{FrameMetadata,getters::*,},
+        load::*, Dimensions, DimensionsError
+    }, metadata::{getters::*, FrameMetadata}, tiff::{
+        dimensions_consistent, BigTiffIFD, FileFormat, IFD
+    }, utils::{parallelize_op,FramesError,}, ClockBase, CorrosiffError, TiffMode
 };
 
 pub type RegistrationDict = HashMap<u64, (i32, i32)>;
@@ -545,9 +541,7 @@ impl SiffReader{
         // Check that the frames share a shape
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         let mut registration = registration;
         // Check that every frame requested has a registration value,
@@ -674,15 +668,12 @@ impl SiffReader{
     ) -> Result<(Array3<f64>, Array3<u16>), CorrosiffError> {
         
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         let mut registration = registration;
 
@@ -767,15 +758,12 @@ impl SiffReader{
         registration : Option<&RegistrationDict>,
     ) -> Result<(Array3<Complex<f64>>, Array3<u16>), CorrosiffError> {
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         let mut registration = registration;
 
@@ -911,15 +899,12 @@ impl SiffReader{
     ) -> Result<Array4<u16>, CorrosiffError> {
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         let mut registration = registration;
 
@@ -1077,15 +1062,12 @@ impl SiffReader{
     /// time histogram for each frame requested. Shape is `(frames.len(), num_bins)`.
     pub fn get_histogram_mask(&self, frames : &[u64], mask : &ArrayView2<bool>, registration : Option<&RegistrationDict>)
     -> Result<Array2<u64>, CorrosiffError> {
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
             
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != mask.dim() {
             return Err(FramesError::DimensionsError(
@@ -1159,15 +1141,12 @@ impl SiffReader{
     pub fn get_histogram_mask_volume(
         &self, frames : &[u64], mask : &ArrayView3<bool>, registration : Option<&RegistrationDict>
     ) -> Result<Array2<u64>, CorrosiffError> {
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
 
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (mask.dim().1, mask.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -1254,6 +1233,294 @@ impl SiffReader{
         Ok(array)
     }
 
+    /// Returns a timeseries of a 1D-ified mask applied to
+    /// each frame in the specified range. This allows you
+    /// to read only a much smaller array into memory than the
+    /// whole image series but still retain each of the individual
+    /// pixels. Should be equivalent to `get_frames_intensity`
+    /// followed by masking.
+    /// 
+    /// ## Arguments
+    /// 
+    /// * `roi` - A 2D boolean array with the same shape as the
+    /// frames' `y` and `x` dimensions. The ROI is a mask which
+    /// will be used to select the pixels of the returned array.
+    /// 
+    /// * `frames` - A slice of `u64` values corresponding to the
+    /// frame numbers to retrieve
+    /// 
+    /// * `registration` - An optional `HashMap<u64, (i32, i32)>` which
+    /// contains the pixel shifts for each frame. If this is `None`,
+    /// the frames are read unregistered (runs faster).
+    /// 
+    /// ## Returns
+    /// 
+    /// * `Result<Array2<u64>, CorrosiffError>` - A 2D array of `u64` values
+    /// corresponding to the flattened intensity of the frames requested
+    /// within the ROI specified. Shape is `(frames.len(), num_pixels_in_roi)`.
+    /// 
+    /// ## Example
+    /// 
+    /// ```rust
+    /// use corrosiff::tests::get_test_files;
+    /// use corrosiff::SiffReader;
+    /// use ndarray::prelude::*;
+    /// let test_files = get_test_files();
+    /// let filename = test_files.get("TEST_PATH").expect("TEST_PATH not found");
+    /// let reader = SiffReader::open(filename);
+    /// let roi = Array2::<bool>::from_elem((512, 512), true);
+    /// // Set the ROI to false in the middle
+    /// //roi.slice(s![200..300, 200..300]).fill(false);
+    /// 
+    ///
+    /// ```
+    ///
+    /// ## See also
+    /// 
+    /// - `get_roi_volume` - for a 3D ROI mask
+    pub fn get_roi_flat(
+        &self,
+        roi : &ArrayView2<bool>,
+        frames : &[u64],
+        registration : Option<&RegistrationDict>
+    ) -> Result<Array2<u64>, CorrosiffError> {
+        
+        _check_frames_in_bounds(&frames, &self._ifds)?;
+        
+        let array_dims = self._image_dims.clone().or_else(
+            || _check_shared_shape(frames, &self._ifds)
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
+
+        if array_dims.to_tuple() != roi.dim() {
+            return Err(FramesError::DimensionsError(
+                DimensionsError::MismatchedDimensions{
+                    required : array_dims,
+                    requested : Dimensions::from_tuple(roi.dim()),
+                }
+            ).into());
+        }
+
+        let mut registration = registration;
+        _check_registration(&mut registration, &frames)?;
+
+        // The ROI array has the same shape as the number of True values
+        // in the mask.
+        let mut array = Array2::<u64>::zeros(
+            (frames.len(),
+            roi.iter().filter(|&&x| x).count())
+        );
+
+        let mut lookup_table = Array2::<usize>::zeros(roi.dim());
+
+        let mut target_px = 0;
+
+        for (&roi_px, lookup_idx) in izip!(roi.iter(), lookup_table.iter_mut()) {
+            if roi_px {
+                *lookup_idx = target_px;
+                target_px += 1;
+            }
+        }
+
+        let op = | frames : &[u64], chunk : &mut ArrayViewMut2<u64>, reader : &mut File |
+        -> Result<(), CorrosiffError> {
+            match registration {
+                Some(reg) => {
+                    frames.iter().zip(chunk.axis_iter_mut(Axis(0)))
+                        .try_for_each(
+                            |(&this_frame, mut this_chunk)|
+                            -> Result<(), CorrosiffError> {
+                            extract_intensity_mask_registered(
+                                reader,
+                                &self._ifds[this_frame as usize],
+                                &mut this_chunk,
+                                &roi.view(),
+                                &lookup_table.view(),
+                                *reg.get(&this_frame).unwrap(),
+                            )?; Ok(())
+                        })?;
+                },
+                None => {
+                    frames.iter().zip(chunk.axis_iter_mut(Axis(0)))
+                        .try_for_each(
+                            |(&this_frame, mut this_chunk)|
+                            -> Result<(), CorrosiffError> {
+                            extract_intensity_mask(
+                                reader,
+                                &self._ifds[this_frame as usize],
+                                &mut this_chunk,
+                                &roi.view(),
+                                &lookup_table.view(),
+                            )?; Ok(())
+                        })?;
+                },
+            }
+            Ok(())
+        };
+
+        parallelize_op!(
+            array, 
+            2500, 
+            frames, 
+            self._filename,
+            op
+        );
+
+        Ok(array)
+    }
+
+    /// Returns a timeseries of a 1D-ified mask applied to
+    /// the volumes in the specified range. This allows you
+    /// to read only a much smaller array into memory than the
+    /// whole image series but still retain each of the individual
+    /// pixels. Should be equivalent to `get_frames_intensity`
+    /// followed by masking.
+    /// 
+    /// ## Arguments
+    /// 
+    /// * `roi` - A 3D boolean array with the same shape as the
+    /// frames' `y` and `x` dimensions. The ROI is a mask which
+    /// will be used to sum the intensity of the frames requested.
+    /// 
+    /// * `frames` - A slice of `u64` values corresponding to the
+    /// frame numbers to retrieve. Iterates through these frames
+    /// in the z-dimension of the ROI.
+    /// 
+    /// * `registration` - An optional `HashMap<u64, (i32, i32)>` which
+    /// contains the pixel shifts for each frame. If this is `None`,
+    /// the frames are read unregistered (runs faster).
+    /// 
+    /// ## Returns
+    /// 
+    /// * `Result<Array2<u64>, CorrosiffError>` - A 2D array of `u64` values
+    /// corresponding to the flattened intensity of the frames requested
+    /// within the ROI specified. Shape is `(frames.len() / num_slices, num_pixels_in_roi)`.
+    /// 
+    /// ## Example
+    /// 
+    /// ```rust
+    /// use corrosiff::tests::get_test_files;
+    /// use corrosiff::SiffReader;
+    /// use ndarray::prelude::*;
+    /// let test_files = get_test_files();
+    /// let filename = test_files.get("TEST_PATH").expect("TEST_PATH not found");
+    /// let reader = SiffReader::open(filename);
+    /// ///TODO FINISH THIS EXAMPLE
+    /// 
+    ///
+    /// ```
+    ///
+    /// ## See also
+    /// 
+    /// - `get_roi_flat` - for a 2D ROI mask
+    pub fn get_roi_volume(
+        &self,
+        roi : &ArrayView3<bool>,
+        frames : &[u64],
+        registration : Option<&RegistrationDict>
+    ) -> Result<Array2<u64>, CorrosiffError> {
+        _check_frames_in_bounds(&frames, &self._ifds)?;
+
+        let array_dims = self._image_dims.clone().or_else(
+            || _check_shared_shape(frames, &self._ifds)
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
+
+        if array_dims.to_tuple() != (roi.dim().1, roi.dim().2) {
+            return Err(FramesError::DimensionsError(
+                DimensionsError::MismatchedDimensions{
+                    required : array_dims,
+                    requested : Dimensions::from_tuple((roi.dim().1, roi.dim().2)),
+                }
+            ).into());
+        }
+
+        let mut registration = registration;
+        _check_registration(&mut registration, &frames)?;
+
+        // The ROI array has the same shape as the number of True values
+        // in the mask.
+        let mut array = Array2::<u64>::zeros(
+            (frames.len(), roi.iter().filter(|&&x| x).count())
+        );
+
+        let mut lookup_table = Array3::<usize>::zeros(roi.dim());
+
+        let mut target_px = 0;
+
+        for (&roi_px, lookup_idx) in izip!(roi.iter(), lookup_table.iter_mut()) {
+            if roi_px {
+                *lookup_idx = target_px;
+                target_px += 1;
+            }
+        }
+
+        let chunk_size = 2500;
+        let n_threads = frames.len()/chunk_size + 1;
+        let remainder = frames.len() % n_threads;
+
+        // Compute the bounds for each threads operation
+        let mut offsets = vec![];
+        let mut start = 0;
+        for i in 0..n_threads {
+            let end = start + chunk_size + if i < remainder { 1 } else { 0 };
+            offsets.push((start, end));
+            start = end;
+        }
+
+        // Create an array of chunks to parallelize
+        let array_chunks : Vec<_> = array.axis_chunks_iter_mut(Axis(0), chunk_size).collect();
+        array_chunks.into_par_iter().enumerate().try_for_each(
+            |(chunk_idx, mut chunk)| -> Result<(), CorrosiffError> {
+            // Get the frame numbers and ifds for the frames in the chunk
+            let start = chunk_idx * chunk_size;
+            let end = ((chunk_idx + 1) * chunk_size).min(frames.len());
+
+            let local_frames = &frames[start..end];
+            let mut local_f = File::open(&self._filename).unwrap();
+
+            let roi_cycle = roi.axis_iter(Axis(0)).cycle();
+            let lookup_cycle = lookup_table.axis_iter(Axis(0)).cycle();
+            // roi_cycle needs to be incremented by the start value
+            // modulo the length of the mask
+            let roi_cycle = roi_cycle.skip(start % roi.dim().0);
+            let lookup_cycle = lookup_cycle.skip(start % roi.dim().0);
+
+            match registration {
+                Some(reg) => {
+                    izip!(local_frames.iter(), chunk.axis_iter_mut(Axis(0)), roi_cycle, lookup_cycle)
+                        .try_for_each(
+                            |(&this_frame, mut this_chunk, roi_plane, lookup_plane)|
+                            -> Result<(), CorrosiffError> {
+                            extract_intensity_mask_registered(
+                                &mut local_f,
+                                &self._ifds[this_frame as usize],
+                                &mut this_chunk,
+                                &roi_plane,
+                                &lookup_plane,
+                                *reg.get(&this_frame).unwrap(),
+                            )?; Ok(())
+                        })?;
+                },
+                None => {
+                    izip!(local_frames.iter(), chunk.axis_iter_mut(Axis(0)), roi_cycle, lookup_cycle)
+                        .try_for_each(
+                            |(&this_frame, mut this_chunk, roi_plane, lookup_plane)|
+                            -> Result<(), CorrosiffError> {
+                            extract_intensity_mask(
+                                &mut local_f,
+                                &self._ifds[this_frame as usize],
+                                &mut this_chunk,
+                                &roi_plane,
+                                &lookup_plane,
+                            )?; Ok(())
+                        })?;
+                }
+            }
+            Ok(())
+        })?;
+
+        Ok(array)
+    }
+
     /// Sums the intensity of the frames requested within the
     /// region of interest (ROI) specified by the boolean array
     /// `roi`. The ROI should be the same shape as the frames' 
@@ -1307,15 +1574,12 @@ impl SiffReader{
         registration : Option<&RegistrationDict>
     ) -> Result<Array1<u64>, CorrosiffError> {
          // Check that the frames are in bounds
-         _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+         _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != roi.dim() {
             return Err(FramesError::DimensionsError(
@@ -1441,15 +1705,12 @@ impl SiffReader{
     ) -> Result<Array1<u64>, CorrosiffError>{
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
 
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (roi.dim().1, roi.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -1591,15 +1852,12 @@ impl SiffReader{
     ) -> Result<Array2<u64>, CorrosiffError> {
         
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().1, rois.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -1735,15 +1993,12 @@ impl SiffReader{
     ) -> Result<Array2<u64>, CorrosiffError> {
         
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
 
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or_else(||FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or_else(||DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().2, rois.dim().3) {
             return Err(FramesError::DimensionsError(
@@ -1893,15 +2148,12 @@ impl SiffReader{
     ) -> Result<(Array1<f64>, Array1<u64>), CorrosiffError> {
         
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != roi.dim() {
             return Err(FramesError::DimensionsError(
@@ -2039,15 +2291,12 @@ impl SiffReader{
     ) -> Result<(Array1<f64>, Array1<u64>), CorrosiffError> {
                 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (roi.dim().1, roi.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -2189,15 +2438,12 @@ impl SiffReader{
     ) -> Result<(Array2<f64>, Array2<u64>), CorrosiffError> {
                         
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().1, rois.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -2349,15 +2595,12 @@ impl SiffReader{
     ) -> Result<(Array2<f64>, Array2<u64>), CorrosiffError> {
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().2, rois.dim().3) {
             return Err(FramesError::DimensionsError(
@@ -2508,15 +2751,12 @@ impl SiffReader{
     ) -> Result<(Array1<Complex<f64>>, Array1<u64>), CorrosiffError> {
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != roi.dim() {
             return Err(FramesError::DimensionsError(
@@ -2664,15 +2904,12 @@ impl SiffReader{
         registration : Option<&RegistrationDict>,
     ) -> Result<(Array1<Complex<f64>>, Array1<u64>), CorrosiffError> {
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
         
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (roi.dim().1, roi.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -2830,15 +3067,12 @@ impl SiffReader{
     ) -> Result<(Array2<Complex<f64>>, Array2<u64>), CorrosiffError> {
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
 
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().1, rois.dim().2) {
             return Err(FramesError::DimensionsError(
@@ -2987,15 +3221,12 @@ impl SiffReader{
     ) -> Result<(Array2<Complex<f64>>, Array2<u64>), CorrosiffError> {
 
         // Check that the frames are in bounds
-        _check_frames_in_bounds(&frames, &self._ifds).map_err(
-            FramesError::DimensionsError)?;
+        _check_frames_in_bounds(&frames, &self._ifds)?;
 
         // Check that the frames share a shape with the mask
         let array_dims = self._image_dims.clone().or_else(
             || _check_shared_shape(frames, &self._ifds)
-        ).ok_or(FramesError::DimensionsError(
-            DimensionsError::NoConsistentDimensions)
-        )?;
+        ).ok_or(DimensionsError::NoConsistentDimensions)?;
 
         if array_dims.to_tuple() != (rois.dim().2, rois.dim().3) {
             return Err(FramesError::DimensionsError(
@@ -3201,20 +3432,21 @@ impl Display for SiffReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        BIG_FILE_PATH, COMPRESSED_FRAME_NUM,
-        TEST_FILE_PATH, UNCOMPRESSED_FRAME_NUM
-    };
+    use crate::tests::{get_test_paths, UNCOMPRESSED_FRAME_NUM, COMPRESSED_FRAME_NUM};
 
     #[test]
     fn test_open_siff() {
-        let reader = SiffReader::open(TEST_FILE_PATH);
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path);
         assert!(reader.is_ok());
     }
 
     #[test]
     fn read_frame() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         // Compressed frame
         let frame = reader.get_frames_intensity(&[35], None);
         assert!(frame.is_ok(), "Error: {:?}", frame);
@@ -3244,7 +3476,9 @@ mod tests {
     /// Read several frames and test.
     #[test]
     fn read_frames(){
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let frames = reader.get_frames_intensity(&[15, 35, 35], None);
         assert!(frames.is_ok());
         let frames = frames.unwrap();
@@ -3285,7 +3519,9 @@ mod tests {
 
     #[test]
     fn test_get_frames_flim() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let frame_nums = [15u64, 35u64];
         let frames = reader.get_frames_flim(&frame_nums, None);
         assert!(frames.is_ok());
@@ -3312,7 +3548,9 @@ mod tests {
 
     #[test]
     fn test_get_frames_tau_d(){
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let frame_nums = [15u64, 35u64];
         let frames = reader.get_frames_tau_d(&frame_nums, None).unwrap();
 
@@ -3336,7 +3574,9 @@ mod tests {
 
     #[test]
     fn read_histogram() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         
         let framelist = vec![15];
         let hist = reader.get_histogram(&framelist);
@@ -3348,7 +3588,9 @@ mod tests {
 
     #[test]
     fn test_masked_histograms() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
 
         let mut three_d_roi = Array3::<bool>::from_elem(
             (6, reader.image_dims().unwrap().ydim as usize, reader.image_dims().unwrap().xdim as usize),
@@ -3366,7 +3608,9 @@ mod tests {
 
     #[test]
     fn get_frame_metadata(){
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let metadata = reader.get_frame_metadata(&[15, 35]);
         assert!(metadata.is_ok());
         let metadata = metadata.unwrap();
@@ -3392,8 +3636,89 @@ mod tests {
     }
 
     #[test]
+    fn test_get_roi() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
+        
+        let frames = [UNCOMPRESSED_FRAME_NUM as u64, COMPRESSED_FRAME_NUM as u64];
+
+        let mut roi = Array2::<bool>::from_elem(
+            reader.image_dims().unwrap().to_tuple(), true
+        );
+
+        let all_frame = reader.get_roi_flat(&roi.view(), &frames, None)
+            .unwrap();
+        assert_eq!(
+            all_frame.shape(),
+            &[frames.len(), roi.shape()[0]*roi.shape()[1]]
+        );
+
+        assert_eq!(
+            all_frame.sum_axis(Axis(1)),
+            reader.sum_roi_flat(&roi.view(), &frames, None).unwrap()
+        );
+
+        // Make an ROI that has some false values
+        roi.iter_mut().for_each(|x| *x = rand::random::<bool>());
+        let lesser_frame = reader.get_roi_flat(&roi.view(), &frames, None)
+            .unwrap();
+
+        assert_eq!(
+            lesser_frame.shape(),
+            &[frames.len(), roi.iter().filter(|&x| *x).count()]
+        );
+
+        assert!(lesser_frame.sum_axis(Axis(1)).iter().all(
+            |&x| x < all_frame.sum_axis(Axis(1)).iter().sum::<u64>()
+        ));
+
+        assert_eq!(
+            lesser_frame.sum_axis(Axis(1)),
+            reader.sum_roi_flat(&roi.view(), &frames, None).unwrap()
+        );
+
+        // Make a 3D ROI with random true and false values
+        let n_planes = 5;
+        let mut roi_3d = Array3::<bool>::from_elem(
+            (n_planes, reader.image_dims().unwrap().ydim as usize, reader.image_dims().unwrap().xdim as usize),
+            true
+        );
+
+        let all_frame_3d = reader.get_roi_volume(&roi_3d.view(), &frames, None)
+            .unwrap();
+        assert_eq!(
+            all_frame_3d.shape(),
+            &[frames.len(), n_planes*roi_3d.shape()[1]*roi_3d.shape()[2]]
+        );
+
+        roi_3d.iter_mut().for_each(|x| *x = rand::random::<bool>());
+        let lesser_frame_3d = reader.get_roi_volume(&roi_3d.view(), &frames, None)
+            .unwrap();
+
+        assert_eq!(
+            lesser_frame_3d.sum_axis(Axis(1)),
+            reader.sum_roi_volume(&roi_3d.view(), &frames, None).unwrap()
+        );
+
+        // Try it with registration
+        let mut reg = HashMap::<u64, (i32, i32)>::new();
+        reg.insert(frames[0] as u64, (-15, 12));
+        reg.insert(frames[1] as u64, (6,9));
+        let lesser_frame_reg = reader.get_roi_flat(&roi.view(), &frames, Some(&reg))
+            .unwrap();
+
+        assert_eq!(
+            lesser_frame_reg.sum_axis(Axis(1)),
+            reader.sum_roi_flat(&roi.view(), &frames, Some(&reg)).unwrap()
+        );
+    }
+
+    #[test]
     fn test_sum_roi_methods() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
 
         let frames = [UNCOMPRESSED_FRAME_NUM as u64, COMPRESSED_FRAME_NUM as u64];
         //let frames = [15, 35];
@@ -3493,6 +3818,8 @@ mod tests {
 
     #[test]
     fn test_3d_roi_mask(){
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let BIG_FILE_PATH = test_paths.get("BIG_FILE_PATH").expect("BIG_FILE_PATH not found");
         /************
          * Now for 3d!
          */
@@ -3617,7 +3944,9 @@ mod tests {
 
     #[test]
     fn test_2d_roi_flim(){
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let frames = (0..300).map(|x| x as u64).collect::<Vec<_>>();
 
         let mut roi = Array2::<bool>::from_elem(
@@ -3785,7 +4114,9 @@ mod tests {
 
     #[test]
     fn test_2d_roi_phasor() {
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let frames = (0..300).map(|x| x as u64).collect::<Vec<_>>();
 
         let mut roi = Array2::<bool>::from_elem(
@@ -3895,6 +4226,8 @@ mod tests {
 
     #[test]
     fn test_3d_roi_flim(){
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let BIG_FILE_PATH = test_paths.get("BIG_FILE_PATH").expect("BIG_FILE_PATH not found");
         let reader = SiffReader::open(BIG_FILE_PATH).unwrap();
         let frames = (0..300).map(|x| x as u64).collect::<Vec<_>>();
 
@@ -4071,6 +4404,8 @@ mod tests {
 
     #[test]
     fn test_3d_roi_phasor() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let BIG_FILE_PATH = test_paths.get("BIG_FILE_PATH").expect("BIG_FILE_PATH not found");
         let reader = SiffReader::open(BIG_FILE_PATH).unwrap();
         let frames = (0..300).map(|x| x as u64).collect::<Vec<_>>();
 
@@ -4191,7 +4526,9 @@ mod tests {
 
     #[test]
     fn time_methods(){
-        let reader = SiffReader::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let reader = SiffReader::open(test_file_path).unwrap();
         let times = reader.get_experiment_timestamps(&[15, 35]);
         assert!(times.is_ok());
         let times = times.unwrap();

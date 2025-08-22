@@ -1,9 +1,16 @@
+use std::env;
 use corrosiff;
 
 fn main() {
+    // Open a siff file from the argument
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <path_to_siff_file>", args[0]);
+        return;
+    }
 
     corrosiff::open_siff(
-        "/Users/stephen/Desktop/Data/imaging/2024-04/2024-04-07/Dh31_LexA_LKir_LGFlamp1/Fly1/BarOnAtTen_1.siff"
+        &args[1]
     ).map(|siff| {
         println!("Filename: {}", siff.filename());
     }).unwrap_or_else(|e| {

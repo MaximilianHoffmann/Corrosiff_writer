@@ -31,14 +31,18 @@ use crate::data::image::{
         registered::{
             load_array_raw_siff_registered,
             load_array_compressed_siff_registered,
+            extract_mask_raw_siff_registered,
             sum_mask_raw_siff_registered,
             sum_masks_raw_siff_registered,
+            extract_mask_compressed_siff_registered,
             sum_mask_compressed_siff_registered,
             sum_masks_compressed_siff_registered,
         },
         unregistered::{
             load_array_raw_siff,
             load_array_compressed_siff,
+            extract_mask_raw_siff,
+            extract_mask_compressed_siff,
             sum_mask_raw_siff,
             sum_mask_compressed_siff,
             sum_masks_raw_siff,
@@ -61,6 +65,8 @@ pub (crate) mod exports {
     pub (crate) use super::sum_mask_registered as sum_intensity_mask_registered;
     pub (crate) use super::sum_masks as sum_intensity_masks;
     pub (crate) use super::sum_masks_registered as sum_intensity_masks_registered;
+    pub (crate) use super::extract_mask as extract_intensity_mask;
+    pub (crate) use super::extract_mask_registered as extract_intensity_mask_registered;
 }
 
 
@@ -235,6 +241,103 @@ pub fn load_array_registered<'a, T, S>(
             load_array_tiff_registered,
             (
                 &mut array.view_mut(),
+                ifd.height().unwrap().into() as u32,
+                ifd.width().unwrap().into() as u32,
+                registration
+            )
+        )
+    )
+}
+
+
+/// Loads the pixels of the `target_array` with the data
+/// contained in the frame specified by `ifd` only where
+/// the `mask` is `true`.
+/// 
+/// ## Arguments
+/// * `reader` - Any reader of a `.siff` file
+/// * `ifd` - The IFD of the frame to load into
+/// * `target_array` - The array to load the data into viewed as a 1d array,
+/// the flattened pixel map.
+/// * `mask` - The mask to apply to the frame, where `true` means
+/// the pixel should be loaded into the `target_array`.
+pub fn extract_mask<I : IFD, ReaderT : Read + Seek>(
+    reader : &mut ReaderT,
+    ifd : &I,
+    target_array : &mut ArrayViewMut1<u64>,
+    mask : &ArrayView2<bool>,
+    lookup_table : &ArrayView2<usize>,
+) -> Result<(), IOError> {
+    load_array_from_siff!(
+        reader,
+        ifd,
+        (
+            extract_mask_raw_siff,
+            (
+                target_array,
+                mask,
+                lookup_table,
+                ifd.get_tag(StripByteCounts).unwrap().value(),
+                ifd.height().unwrap().into() as u32,
+                ifd.width().unwrap().into() as u32
+            )
+        ),
+        (
+            extract_mask_compressed_siff,
+            (
+                target_array,
+                mask,
+                lookup_table,
+                ifd.height().unwrap().into() as u32,
+                ifd.width().unwrap().into() as u32
+            )
+        )
+    )
+}
+
+
+/// Loads the pixels of the `target_array` with the data
+/// contained in the frame specified by `ifd` only where
+/// the `mask` is `true`.
+/// 
+/// ## Arguments
+/// * `reader` - Any reader of a `.siff` file
+/// * `ifd` - The IFD of the frame to load into
+/// * `target_array` - The array to load the data into viewed as a 1d array,
+/// the flattened pixel map.
+/// * `mask` - The mask to apply to the frame, where `true` means
+/// the pixel should be loaded into the `target_array`
+/// * `registration` - A tuple of the pixelwise shifts
+pub fn extract_mask_registered<I : IFD, ReaderT : Read + Seek>(
+    reader : &mut ReaderT,
+    ifd : &I,
+    target_array : &mut ArrayViewMut1<u64>,
+    mask : &ArrayView2<bool>,
+    lookup_table : &ArrayView2<usize>,
+    registration : (i32, i32),
+) -> Result<(), IOError> {
+    
+    load_array_from_siff!(
+        reader,
+        ifd,
+        (
+            extract_mask_raw_siff_registered,
+            (
+                target_array,
+                mask,
+                lookup_table,
+                ifd.get_tag(StripByteCounts).unwrap().value(),
+                ifd.height().unwrap().into() as u32,
+                ifd.width().unwrap().into() as u32,
+                registration
+            )
+        ),
+        (
+            extract_mask_compressed_siff_registered,
+            (
+                target_array,
+                mask,
+                lookup_table,
                 ifd.height().unwrap().into() as u32,
                 ifd.width().unwrap().into() as u32,
                 registration
@@ -495,14 +598,16 @@ pub fn sum_masks_registered<I : IFD, ReaderT: Read + Seek>(
 mod tests {
     use super::*;
     use super::exports::*;
-    use crate::tests::{TEST_FILE_PATH, UNCOMPRESSED_FRAME_NUM, COMPRESSED_FRAME_NUM};
+    use crate::tests::{get_test_paths, UNCOMPRESSED_FRAME_NUM, COMPRESSED_FRAME_NUM};
     use crate::tiff::BigTiffIFD;
 
     use crate::tiff::FileFormat;
 
     #[test]
     fn test_extract_intensity() {
-        let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let mut f = std::fs::File::open(test_file_path).unwrap();
 
         let fformat = FileFormat::parse_filetype(&mut f).unwrap();
         let ifd_vec : Vec<BigTiffIFD> = fformat.get_ifd_iter(&mut f).collect();
@@ -528,13 +633,15 @@ mod tests {
 
     #[test]
     fn frame_vs_siffreader(){
-        let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let mut f = std::fs::File::open(test_file_path).unwrap();
         let fformat = FileFormat::parse_filetype(&mut f).unwrap();
         let ifd_vec : Vec<BigTiffIFD> = fformat.get_ifd_iter(&mut f).collect();
 
         let frame = SiffFrame::from_ifd(&ifd_vec[60], &mut f).unwrap();
 
-        let sr = crate::open_siff(TEST_FILE_PATH).unwrap();
+        let sr = crate::open_siff(test_file_path).unwrap();
         let siff_frame = sr.get_frames_intensity(&[60], None).unwrap();
 
         assert_eq!(frame.intensity, siff_frame.slice(s![0,..,..]));
@@ -612,7 +719,9 @@ mod tests {
 
     #[test]
     fn test_register() {
-        let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let mut f = std::fs::File::open(test_file_path).unwrap();
         
         let fformat = FileFormat::parse_filetype(&mut f).unwrap();
 

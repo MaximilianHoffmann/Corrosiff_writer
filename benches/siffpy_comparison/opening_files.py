@@ -5,24 +5,24 @@ from local_consts import small_path, large_path, rclone_path
 TEST_RCLONE = False
 
 def test_siffio_small_alone():
-    sr = siffpy.SiffReader()
+    sr = siffpy.SiffReader(backend = 'siffreadermodule')
 
     sr.siffio.open(small_path)
 
 def test_siffio_large_alone():
-    sr = siffpy.SiffReader()
+    sr = siffpy.SiffReader(backend = 'siffreadermodule')
 
     sr.siffio.open(large_path)
 
 def test_open_small_siff():
     """Stupid test function"""
-    siffpy.SiffReader(small_path)
+    siffpy.SiffReader(small_path, backend = 'siffreadermodule')
 
 def test_open_large_siff():
-    siffpy.SiffReader(large_path)
+    siffpy.SiffReader(large_path, backend = 'siffreadermodule')
 
 def test_open_rclone_siff():
-    siffpy.SiffReader(rclone_path)
+    siffpy.SiffReader(rclone_path, backend = 'siffreadermodule')
 
 if __name__ == '__main__':
     import timeit

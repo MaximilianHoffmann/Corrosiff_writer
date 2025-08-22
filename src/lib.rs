@@ -12,6 +12,13 @@
 //! in the `corrosiff` module for converting `.siff` files to `.tiff` files
 //! or for reading frames directly for a one-time call if you don't expect
 //! multiple interactions with the file.
+//! 
+//! Like any first Rust library, there is a lot of holdover boilerplate code
+//! from me beginning to learn how to do Rust in a Rust-like way, but not
+//! quite having learned the correct style (or most time-efficient implementations).
+//! 
+//! If these FLIM experiments catch on and this project gets developed further,
+//! I will revisit this and hopefully make things much slicker.
 
 use std::{
     io::Result as IOResult,
@@ -438,26 +445,47 @@ pub fn siff_to_tiff(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    pub static TEST_FILE_PATH : &str = "/Users/stephen/Desktop/Data/imaging/2024-04/2024-04-17/21Dhh_GCaFLITS/Fly1/BarOnAtTen_1.siff";
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use std::io::BufRead;
+    use std::collections::HashMap;
+    use std::io::Error as IOError;
+    ///
+    /// # Example
+    /// ```rust
+    /// let paths = get_test_paths().expect("Failed to read test paths");
+    /// assert!(paths.contains_key("TEST_PATH"));
+    /// ```
+    pub (crate) fn get_test_paths() -> Result<HashMap<String, String>, IOError> {
+        let mut pathmap = HashMap::new();
+        // let file = File::open("test_data/test_paths.txt")?;
+        let file = File::open("/Users/stephen/Desktop/Data/SICode/corrosiff/test_data/test_paths.txt")?;
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines() {
+            if let Some((key, path)) = line?.split_once('=') {
+                pathmap.insert(key.trim().to_string(), path.trim()
+                .replace('\"',"").to_string());
+            } else {
+                return Err(IOError::new(std::io::ErrorKind::InvalidData, 
+                    "Invalid line format in test_paths.txt"));
+            }
+            
+        }
+        Ok(pathmap)
+    }
+
     pub const UNCOMPRESSED_FRAME_NUM : usize = 14;
     pub const COMPRESSED_FRAME_NUM : usize = 40;
-    
-    pub static APPENDED_TEXT_FILE : &str = "/Users/stephen/Desktop/Data/imaging/2024-05/2024-05-27/L2Split_GCaFLITS_KCL/Fly1/KClApplication_1.siff";
-
-    pub static BIG_FILE_PATH :&str = "/Users/stephen/Desktop/Data/imaging/2024-05/2024-05-27/SS02255_greenCamui_alpha/Fly1/PB_1.siff";
-
-    pub static TIFF_SIFF : &str = "/Users/stephen/Desktop/Data/imaging/2024_06_03_9.tiff";
 
     #[test]
     fn test_open_siff() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         let reader = open_siff("file.siff");
         assert!(reader.is_err());
-
-        let reader = open_siff(TEST_FILE_PATH);
+        let reader = open_siff(test_file_path);
         assert!(reader.is_ok());
 
         assert!(reader.unwrap().filename().contains("BarOnAtTen_1.siff"));
@@ -465,14 +493,16 @@ mod tests {
 
     #[test]
     fn test_scan_timestamps(){
-        let timestamps = scan_timestamps(&TEST_FILE_PATH);
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let timestamps = scan_timestamps(&test_file_path);
         assert!(timestamps.is_ok());
         let (start, end) = timestamps.unwrap();
         assert!(start <= end);
         assert_ne!(start, 0);
         assert_ne!(end, 0);
 
-        let first = scan_first_timestamp(&TEST_FILE_PATH);
+        let first = scan_first_timestamp(&test_file_path);
 
         assert!(first.is_ok());
         assert_eq!(first.unwrap(), start);
@@ -482,15 +512,16 @@ mod tests {
 
     #[test]
     fn test_siff_to_tiff() {
-
-        let siffreader = open_siff(&TEST_FILE_PATH).unwrap();
-        let mut pb = PathBuf::from(&TEST_FILE_PATH);
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let test_file_path = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
+        let siffreader = open_siff(&test_file_path).unwrap();
+        let mut pb = PathBuf::from(&test_file_path);
         // let siffreader = open_siff(BIG_FILE_PATH).unwrap();
         // let mut pb = PathBuf::from(BIG_FILE_PATH);
         pb.set_extension("tiff");
 
         // assert!(!pb.exists());
-        let result = siff_to_tiff(TEST_FILE_PATH, TiffMode::ScanImage, None);
+        let result = siff_to_tiff(test_file_path, TiffMode::ScanImage, None);
         // let result = siff_to_tiff(BIG_FILE_PATH, TiffMode::ScanImage, Some(&pb.to_str().unwrap().to_string()));
         assert!(result.is_ok());
         assert!(pb.exists());

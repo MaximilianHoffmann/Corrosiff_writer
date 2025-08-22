@@ -387,11 +387,13 @@ impl<D> FlimArrayEmpirical<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{TEST_FILE_PATH, COMPRESSED_FRAME_NUM, UNCOMPRESSED_FRAME_NUM};
+    use crate::tests::{get_test_paths, COMPRESSED_FRAME_NUM, UNCOMPRESSED_FRAME_NUM};
     use crate::data::image::intensity::siff::load_array as load_array_intensity;
 
     #[test]
     fn load_compressed_arrival_only() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let TEST_FILE_PATH = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
         let file_format = crate::tiff::FileFormat::parse_filetype(&mut f).unwrap();
 
@@ -406,6 +408,8 @@ mod tests {
 
     #[test]
     fn load_uncompressed_arrival_only() {
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let TEST_FILE_PATH = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
         let file_format = crate::tiff::FileFormat::parse_filetype(&mut f).unwrap();
 
@@ -420,6 +424,8 @@ mod tests {
 
     #[test]
     fn load_intensity_and_flim_together_test(){
+        let test_paths = get_test_paths().expect("Failed to read test paths");
+        let TEST_FILE_PATH = test_paths.get("TEST_PATH").expect("TEST_PATH not found");
         let mut f = std::fs::File::open(TEST_FILE_PATH).unwrap();
         let file_format = crate::tiff::FileFormat::parse_filetype(&mut f).unwrap();
 
