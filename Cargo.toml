@@ -12,10 +12,11 @@ repository = "https://github.com/MaimonLab/Corrosiff.git"
 binrw = "*"
 bytemuck = {version = "1.16.0", features = ["extern_crate_std"]}
 itertools = "*"
-ndarray = "*"
+ndarray = {version = "*", features = ["rayon"]}
 num-complex = "*"
 rayon = "*" 
 rand = "*"
+num-traits = "*"
 
 [profile.release]
 #lto = false

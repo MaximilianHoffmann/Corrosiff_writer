@@ -31,6 +31,7 @@ use std::{
 use binrw::BinRead;
 
 use ndarray::prelude::*;
+use num_traits::identities::Zero;
 
 mod tiff;
 mod data;
@@ -445,6 +446,43 @@ pub fn siff_to_tiff(
     Ok(())
 }
 
+/// `dfof(data, f0)` computes the deltaF/F0 of the input data
+/// using the provided F0 array, operating in-place to prevent
+/// excessive memory usage and using parallelism to speed up
+/// the computation a little bit compared to `Numpy` which
+/// has to do each operation in sequence.
+/// TODO: ACTUALLY IMPLEMENT THIS.
+/// 
+pub fn par_dfof<D, T, S>(
+    data : &Array<T, D>,
+    f0 : &Array<S, D::Smaller>
+) -> Result<Array<T, D>, CorrosiffError>
+where
+    D : Dimension + ndarray::RemoveAxis,
+    S : std::ops::Sub<Output = T> + std::ops::Div<T, Output = T> + Sync + Zero,
+    T : Clone + Zero + Send + Sync + std::ops::Sub<S, Output = T> + std::ops::Div<S, Output = T>
+{
+    
+    let mut result = Array::<T, D>::zeros(data.raw_dim());
+
+    // Zip the data and f0 arrays together, broadcasting f0
+    // to match the shape of data, and compute (data - f0) / f0
+    // in parallel with chunking...? Or with par_for_each?
+    ndarray::Zip::from(&mut result)
+        .and(data)
+        .and_broadcast(f0)
+        .par_for_each(|r, d, f| {
+            // if !f.is_zero() {
+            //     *r = (d - f) / f;
+            // } else {
+            //     *r = T::zero(); // Handle division by zero if needed
+            // }
+        });
+    
+    Err(CorrosiffError::NotImplementedError)
+    // Ok(result)
+
+}
 
 #[cfg(test)]
 pub mod tests {
@@ -452,6 +490,9 @@ pub mod tests {
     use std::io::BufRead;
     use std::collections::HashMap;
     use std::io::Error as IOError;
+
+
+
     ///
     /// # Example
     /// ```rust
@@ -478,6 +519,23 @@ pub mod tests {
 
     pub const UNCOMPRESSED_FRAME_NUM : usize = 14;
     pub const COMPRESSED_FRAME_NUM : usize = 40;
+
+    #[test]
+    fn test_dfof() {
+        let data = array![
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[2.0, 3.0], [4.0, 5.0]],
+            [[3.0, 4.0], [5.0, 6.0]]
+        ];
+        let f0 = array![[1.0, 2.0], [3.0, 4.0]];
+        let expected = array![
+            [[0.0, 0.0], [0.0, 0.0]],
+            [[1.0, 0.5], [1.0/3.0, 1.0/4.0]],
+            [[2.0, 1.0], [2.0/3.0, 2.0/4.0]]
+        ];
+        let result = par_dfof(&data, &f0).unwrap();
+        assert_eq!(result, expected);
+    }
 
     #[test]
     fn test_open_siff() {

@@ -1445,6 +1445,7 @@ impl SiffReader{
             (frames.len() / num_slices, roi.iter().filter(|&&x| x).count())
         );
 
+        // Maps the pixels of the volume to their position in the 1D array
         let mut lookup_table = Array3::<usize>::zeros(roi.dim());
 
         let mut target_px = 0;
@@ -1473,6 +1474,8 @@ impl SiffReader{
         let array_chunks : Vec<_> = array.axis_chunks_iter_mut(Axis(0), chunk_size).collect();
         array_chunks.into_par_iter().enumerate().try_for_each(
             |(chunk_idx, mut chunk)| -> Result<(), CorrosiffError> {
+            // Chunks are (volumes , pixels)
+            
             // Get the frame numbers and ifds for the frames in the chunk
             let start = chunk_idx * chunk_size;
             let end = ((chunk_idx + 1) * chunk_size).min(frames.len());
@@ -1494,19 +1497,18 @@ impl SiffReader{
                 Some(reg) => {
                     izip!(
                         local_frames.iter(),
-                        // chunk.axis_iter_mut(Axis(0))
-                        (0..chunk.dim().0)
-                            .flat_map(|x| std::iter::repeat(x).take(num_slices)),
+                        (0..chunk.dim().0) // each chunk has num_slices frames per volume
+                            .flat_map(|x| std::iter::repeat(x).take(num_slices)), // translates to volume idx
                         roi_cycle,
                         lookup_cycle
                     )
                         .try_for_each(
-                            |(&this_frame, this_chunk_idx, roi_plane, lookup_plane)|
+                            |(&this_frame, this_volume_idx, roi_plane, lookup_plane)|
                             -> Result<(), CorrosiffError> {
                             extract_intensity_mask_registered(
                                 &mut local_f,
                                 &self._ifds[this_frame as usize],
-                                &mut chunk.index_axis_mut(Axis(0), this_chunk_idx),
+                                &mut chunk.index_axis_mut(Axis(0), this_volume_idx),
                                 &roi_plane,
                                 &lookup_plane,
                                 *reg.get(&this_frame).unwrap(),
@@ -3706,26 +3708,48 @@ mod tests {
             true
         );
 
+        let frames = (0..(n_planes*20)).map(|x| x as u64).collect::<Vec<_>>();
+
         let all_frame_3d = reader.get_roi_volume(&roi_3d.view(), &frames, None)
             .unwrap();
+        
         assert_eq!(
             all_frame_3d.shape(),
-            &[frames.len(), n_planes*roi_3d.shape()[1]*roi_3d.shape()[2]]
+            &[frames.len()/n_planes, n_planes*roi_3d.shape()[1]*roi_3d.shape()[2]]
+        );
+
+        assert_eq!(
+            all_frame_3d.sum_axis(Axis(1)),
+            reader.sum_roi_volume(&roi_3d.view(), &frames, None).unwrap()
+            .into_shape((frames.len()/n_planes, n_planes,))
+            .unwrap()
+            .sum_axis(Axis(1))
         );
 
         roi_3d.iter_mut().for_each(|x| *x = rand::random::<bool>());
+        
         let lesser_frame_3d = reader.get_roi_volume(&roi_3d.view(), &frames, None)
             .unwrap();
 
         assert_eq!(
+            lesser_frame_3d.shape(),
+            &[frames.len()/n_planes, roi_3d.iter().filter(|&x| *x).count()]
+        );
+
+        println!("{:?}", lesser_frame_3d.shape());
+
+        assert_eq!(
             lesser_frame_3d.sum_axis(Axis(1)),
             reader.sum_roi_volume(&roi_3d.view(), &frames, None).unwrap()
+            .into_shape((frames.len()/n_planes, n_planes,)).unwrap()
+            .sum_axis(Axis(1))
         );
 
         // Try it with registration
         let mut reg = HashMap::<u64, (i32, i32)>::new();
-        reg.insert(frames[0] as u64, (-15, 12));
-        reg.insert(frames[1] as u64, (6,9));
+        for &frame in &frames {
+            reg.insert(frame, (rand::random::<i32>() % reader.image_dims().unwrap().ydim as i32, rand::random::<i32>() % reader.image_dims().unwrap().xdim as i32));
+        }
         let lesser_frame_reg = reader.get_roi_flat(&roi.view(), &frames, Some(&reg))
             .unwrap();
 

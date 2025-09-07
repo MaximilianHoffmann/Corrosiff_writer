@@ -2,3 +2,4 @@
 /learning_libs
 /test_data
 .vscode
+Cargo.lock

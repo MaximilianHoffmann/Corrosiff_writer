@@ -145,6 +145,7 @@ dependencies = [
  "itertools",
  "ndarray",
  "num-complex",
+ "num-traits",
  "rand",
  "rayon",
 ]
@@ -323,6 +324,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
+ "rayon",
 ]
 
 [[package]]
