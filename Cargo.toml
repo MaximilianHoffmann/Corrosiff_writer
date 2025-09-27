@@ -28,29 +28,29 @@ test = []
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 
-# [[bench]]
-# name = "opening_files_benchmark"
-# harness = false
+[[bench]]
+name = "opening_files_benchmark"
+harness = false
 
-# [[bench]]
-# name = "read_frames_benchmark"
-# harness = false
+[[bench]]
+name = "read_frames_benchmark"
+harness = false
 
-# [[bench]]
-# name = "mask_frames_benchmark"
-# harness = false
+[[bench]]
+name = "mask_frames_benchmark"
+harness = false
 
 [[bench]]
 name = "mask_flim_benchmark"
 harness = false
 
-# [[bench]]
-# name = "flim_read_benchmark"
-# harness = false
+[[bench]]
+name = "flim_read_benchmark"
+harness = false
 
-# [[bench]]
-# name = "metadata_benchmarks"
-# harness = false
+[[bench]]
+name = "metadata_benchmarks"
+harness = false
 
 [[bin]]
 name = "siff_to_tiff"
